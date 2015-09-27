@@ -1,0 +1,170 @@
+---
+title: "Transmission vs. miles per gallon"
+author: "Luis Santos"
+date: "27 September 2015"
+output:
+  html_document:
+    css: style.css
+    fig_caption: yes
+---
+```{r load,echo=FALSE,eval=TRUE}
+data(mtcars)
+library(ggplot2)
+```
+
+```{r multiplot_function_code,echo=FALSE,eval=TRUE}
+# Multiple plot function
+#
+# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+# - cols:   Number of columns in layout
+# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+#
+# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+# then plot 1 will go in the upper left, 2 will go in the upper right, and
+# 3 will go all the way across the bottom.
+#
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+  
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+  
+  numPlots = length(plots)
+  
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                     ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+  
+  if (numPlots==1) {
+    print(plots[[1]])
+    
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+    
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+      
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+```
+
+```{r dataprep,echo=FALSE,eval=TRUE}
+## Variables in dataset
+# mpg   --> Miles/US gallon;        cyl   --> nbr cylinders
+# disp  --> Displacement (cu. in.)  hp    --> power (horsepower)
+# drat  --> rear axle ratio         wt    --> weight (lb/1000)
+# qsec  --> 1/4 mile time           vs    --> engine configuration (v/straight)
+# gear  --> nbr forward gears       carb  --> nbr carburetors
+# am    --> Transmission (0 automatic, 1 manual)
+
+cars <- mtcars                                    # reassigning the data
+cars$transmission <- "automatic"                  # new variable (transmission type)
+cars[cars$am == 1,"transmission"] = "manual"      # appropriate labels
+cars$transmission <- as.factor(cars$transmission) # conversion
+cars$vs_ <- "V"                                   # new variable (engine configuration)
+cars[cars$vs == 1,"vs_"] = "S"                    # appropriate labels
+cars$vs_ <- as.factor(cars$vs_)                   # conversion
+# conversion to Litres (1 cu.in == 0.016 l)
+cars$disp <- cars$disp * 0.016
+```
+
+# Does the transmission type affect vehicle consumption?
+By directly comparing the average fuel consumption (average MPG) from cars with automatic gearboxes versus cars with manuals, we could say there is a significant difference between the two: the manuals achieve an average of 24.39 MPG whereas the automatics reach a modest 17.15 - so in total, a significant 7.24 MGP more, for the manuals (Student's T test p-value of 0.001).
+However, this is far too simple of an approach to the question at hand, and a more evolved linear model has revealed that, although there are some differences in fuel economy between automatic and manual cars, they are not as significant: in fact, when taking into account weight, engine size and number of carburetors, there is only a gain of 1.8 MPG when using a manual gear box versus using an automatic one, which is not significant.
+
+# The detailed report
+By analysing the cars dataset from the R package `mtcars`, we will try to clarify whether transmission type (automatic or manual) affect car fuel economy, also known as miles per gallon. The dataset contains a series of values for variables like vehicle weight (in lb/1000), miles per (US) gallon (mpg), engine size (displacement, in cubic inches - which we converted to litres), power, engine configuration (v shape/straight), transmission type and number of carburetors, amongst others. Figure 1 shows a series of plots of some of these variables against MPG, in order to understand some of their relationships.
+
+It seems to be apparent that transmission alone does have an effect on MPG, but we can also confirm other suspicions: that bigger engine sizes are more thirsty, and so are heavier cars, and - apparently - cars with a V-shape engine.
+
+Moving on to the statistics: after testing if the average MPG for manual cars was not different from the average MPg of automatics (using a T test, which yielded that they are different - p-value of 0.001), we then proceeded to use the simplest model for analysis, which also derives from the top left plot in Figure 1, and performed a simple linear regression by fitting transmission to MPG.
+The result (corroborating that of the T-test) was that the automatic gear boxes have an average of 17.15 MPG, and the manual ones achieve 7.24 MPG more - so `r 17.15+7.24` MPG. (Do note we have created a copy of the data set, called `cars`, in which the variable that describes the transmission type has had it values converted to `manual` and `automatic`.)
+```{r code_model1,echo=FALSE,eval=TRUE}
+lm <- lm(mpg ~ transmission, data=cars)
+summary(lm)
+```
+
+The fact that our value of $R{^2}$, which indicates how much variance in MPG values is explained by the model, is quite low indicates that indeed transmission alone does not account for the differences in MPG.
+
+From the plots in Figure 1, we can determine that some of the most relevant characteristics of a vehicle affecting fuel consumption are its weight, engine capacity and number of carburetors (variables `wt`, `disp` and `carb`, respectively, in the data set). So, after properly converting the values for engine size from cubic inches to litres, we have modified our statistical model to include these variables.
+
+First, for each of the select three variables, we fit them as confounders to transmission, using `lm(mpg ~ wt + transmission, data=cars)` for weight, and so on. The final results are:
+```{r code_model2,echo=FALSE,eval=TRUE}
+lma0 <- lm(mpg ~ wt + transmission, data=cars)
+# this is the coef for manual transmission, holding wt as fixed
+a0coef <- round(summary(lma0)$coef[3],3)
+a0rsqr <- round(summary(lma0)$r.squared,2)
+lma1 <- lm(mpg ~ carb + transmission, data=cars)
+# this is the coef for manual transmission, holding carb as fixed
+a1coef <- round(summary(lma1)$coef[3],3)
+a1rsqr <- round(summary(lma1)$r.squared,2)
+lma2 <- lm(mpg ~ disp + transmission, data=cars)
+# this is the coef for manual transmission, holding disp as fixed
+a2coef <- round(summary(lma2)$coef[3],3)
+a2rsqr <- round(summary(lma2)$r.squared,2)
+top <- c("Coef value for Transmission", "R^2")
+side <- c("wt", "carb", "disp")
+var0 <- c(a0coef, a0rsqr)
+var1 <- c(a1coef, a1rsqr)
+var2 <- c(a2coef, a2rsqr)
+df <- data.frame()
+df <- rbind(var0, var1, var2)
+colnames(df) <- top
+rownames(df) <- side
+df
+```
+
+We can see that they all explain around 70 to 75 percent of the variability of the MPG data, but their effect is not coherent: when holding weight as a fixed effect, manual transmissions seem to perform not as well as automatic ones, with a `r abs(a0coef)` _decrease_ in average MPG, while for the number of carburetors and engine size, if they instead are the fixed effects, then average MPG increases `r a1coef` and `r a2coef`, respectively.
+
+However, if these variables are all playing their part in the results, then we can use a statistical model that includes them together. Our linear model will now be `lm(mpg ~ wt + disp + carb + transmission, data=cars)`.
+```{r code_model3,echo=FALSE,eval=TRUE,results='hold'}
+lmb <- lm(mpg ~ wt + disp + carb + transmission, data=cars)
+coef <- round(summary(lmb)$coef[5],2)
+pcr2 <- round(summary(lmb)$r.squared,2)*100
+```
+
+This last model accounts for `r pcr2`% of the variability of the MPG values, and from it, we learn that, if we hold the values of weight, carburetors and engine size, then we expect that using a manual transmission should improve the average MPG by `r coef`. For diagnostic purposes, we plot the resuls of the fit in Figure 2 of the Appendix.
+
+As a final test, we have ascertained how beneficial it was to have used these models, with more confounders and complexity. For that, using ANOVA we can test for H0 : there is no difference between models:
+```{r anova,echo=FALSE,eval=TRUE}
+anova(lm, lma0, lmb)
+```
+The results tell us that there was a significant improvement in using any of the `lma` models versus the initial one, and that the last model to be used, in which we included all variables selected, was even better.
+
+
+# Appendix
+**Figure 1** How different variables may influence fuel consumption, along with the transmission type
+```{r figure1,echo=FALSE,eval=TRUE,fig.width=12,fig.height=12,fig.cap="How different variables may influence fuel consumption, along with the transmission type",warning=FALSE,out.extra='style="border:1px solid #ccc;border-radius:4px"'}
+p1 <- ggplot(cars, aes(x=disp,y=mpg)) + geom_point(aes(colour=transmission))
+p1 <- p1 + ggtitle("MPG variation with engine size")+ labs(x="Engine size (litres)", y="MPG (US gallon)")
+p2 <- ggplot(cars, aes(x=carb,y=mpg)) + geom_point(aes(colour=transmission))
+p2 <- p2 + ggtitle("MPG variation with the number of carburetors") + labs(x="Number of carburetors", y="MPG (US gallon)")
+p4 <- ggplot(cars, aes(x=vs_,y=mpg)) + geom_boxplot(aes(colour=transmission))
+p4 <- p4 + ggtitle("MPG distribution by engine configuration") + labs(x="V-shaped engine / Straight engine", y="MPG (US gallon)")
+p5 <- ggplot(cars, aes(x=transmission, y=mpg)) + geom_boxplot(aes(colour=transmission))
+p5 <- p5 + ggtitle("MPG distribution by transmission type") + labs(x="Transmission type", y="MPG (US gallon)")
+p6 <- ggplot(cars, aes(x=wt, y=mpg)) + geom_point(aes(colour=transmission))
+p6 <- p6 + ggtitle("MPG distribution by weight") + labs(x="Weight (lb/1000)", y="MPG (US gallon)")
+p7 <- ggplot(cars, aes(x=as.factor(cyl), y=mpg)) + geom_boxplot(aes(colour=transmission))
+p7 <- p7 + ggtitle("MPG distribution by number of cylinders") + labs(x="Number of cylinders", y="MPG (US gallon)")
+multiplot(p5, p1, p2, p6, p4, p7, cols=2)
+```
+
+**Figure 2** Diagnostic plots for the multivarible linear model
+```{r figure2,echo=FALSE,eval=TRUE,fig.width=10,fig.height=10,fig.cap="Diagnostic plots for the multivarible linear model",warning=FALSE,out.extra='style="border:1px solid #ccc;border-radius:4px"'}
+par(mfrow=c(2,2))
+plot(lmb)
+```
+
